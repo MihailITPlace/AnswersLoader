@@ -29,7 +29,11 @@ namespace AnswersLoader
                 Console.WriteLine("Обрабатываем сообщения...");
                 if (messages.Any())
                 {
-                    reports.Add(service.GetGroupReport(g, messages));
+                    var report = service.GetGroupReport(g, messages);
+                    if (report != null)
+                    {
+                        reports.Add(report);
+                    }
                 }
                 
                 Console.WriteLine("------------");

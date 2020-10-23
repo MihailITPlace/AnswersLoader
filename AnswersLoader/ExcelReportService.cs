@@ -11,6 +11,7 @@ namespace AnswersLoader
 
         public ExcelReportService(List<GroupReport> reports)
         {
+            ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
             _reports = reports;
         }
 

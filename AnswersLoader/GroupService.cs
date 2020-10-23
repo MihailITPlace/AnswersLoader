@@ -73,12 +73,20 @@ namespace AnswersLoader
             foreach (var answersByUser in usersAnswers)
             {
                 var answerList = answersByUser.ToList();
+                answerList.Sort((a, b) => a.Date.Value.CompareTo(b.Date.Value));
+                
+                var acceptedAnswers = GetAcceptedAnswers(answersByUser.Key, answerList);
+                if (acceptedAnswers.Count == 0) { continue; }
+
                 var userName = GetUserName(answerList[0]);
-                result[userName] = GetAcceptedAnswers(answersByUser.Key, answerList);
+                result[userName] = acceptedAnswers;
             }
+            
+            if (result.Count == 0) { return null; }
 
             var sortedNames = result.Keys.ToList();
             var answerLists = result.Values.ToList();
+
             var maxAnswCount = answerLists.Max(l => l.Count);
 
             var report = new GroupReport(groupName, sortedNames, maxAnswCount);
@@ -130,7 +138,7 @@ namespace AnswersLoader
             var marks = new List<bool>(answerLists.Count);
             foreach (var l in answerLists)
             {
-                if (l.Count != 0 && (Math.Abs(l[0].Date.Value.Subtract(mode).TotalDays) <= 1))
+                if (l.Count != 0 && (Math.Abs(l[0].Date.Value.Subtract(mode).TotalDays) < 2))
                 {
                     marks.Add(true);
                     l.RemoveAt(0);
@@ -148,7 +156,7 @@ namespace AnswersLoader
         {
             var firstLine = msg.Text.Split('\n')[0];
             
-            var regex = new Regex(@"\w{2,}_\d{2}\.? (\w+ \w+ \w*)");
+            var regex = new Regex(@"\w{2,}_\d{2}\.? (\w+ \w+\s?\w*)");
             var match = regex.Match(firstLine);
 
             if (!match.Success && match.Groups.Count < 2)
@@ -156,36 +164,58 @@ namespace AnswersLoader
                 return string.Empty;
             }
 
-            return match.Groups[1].Value;
+            return match.Groups[1].Value.Trim();
         }
 
         private List<Message> GetAcceptedAnswers(long? peerId, List<Message> answers)
         {
             var result = new List<Message>();
-            var allUserMessages = _api.Messages.GetHistory(new MessagesGetHistoryParams
-            {
-                Offset = answers[0].ConversationMessageId - 1,
-                Reversed = true,
-                Count = 200,
-                PeerId = peerId
-            }).Messages.ToList();
+            var allUserMessages = GetAllMessages(peerId, answers[0].ConversationMessageId - 1);
 
             var answerIdx = 0;
             var alreadyAdded = false;
             foreach (var m in allUserMessages)
             {
-                if (answerIdx + 1 < answers.Count() && m.Id == answers[answerIdx + 1].Id)
+                if (answerIdx + 1 < answers.Count && m.Id == answers[answerIdx + 1].Id)
                 {
                     answerIdx++;
                     alreadyAdded = false;
-                    //continue;
+                    continue;
                 }
 
-                if (!alreadyAdded && m.FromId == 3704270 && m.Text.ToLower().Contains("получено"))
+                var lowerText = m.Text.ToLower();
+                if (!alreadyAdded && m.FromId == 3704270 && 
+                    (lowerText.Contains("получено") ||
+                     lowerText.Contains("принято")))
                 {
                     result.Add(answers[answerIdx]);
                     alreadyAdded = true;
                 }
+            }
+
+            result.Sort((a,b) => a.Date.Value.CompareTo(b.Date.Value));
+            return result;
+        }
+
+        private List<Message> GetAllMessages(long? peerId, long? start)
+        {
+            var result = new List<Message>();
+            var offset = start;
+            const int count = 200;
+            while (true)
+            {
+                var items = _api.Messages.GetHistory(new MessagesGetHistoryParams
+                {
+                    Offset = offset,
+                    Reversed = true,
+                    Count = count,
+                    PeerId = peerId
+                }).Messages.ToList();
+                offset += count;
+                result.AddRange(items);
+                if (items.Count < count) { break; }
+                
+                Thread.Sleep(_sleepTime);
             }
 
             return result;
