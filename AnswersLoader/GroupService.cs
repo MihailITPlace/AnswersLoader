@@ -73,12 +73,14 @@ namespace AnswersLoader
     {
         private VkApi _api;
         private DateTime _lowerDateLimit;
+        private int _dateNeighborhood;
         private int _sleepTime;
 
         public GroupService(VkApi api, IConfiguration config)
         {
             _api = api;
             _sleepTime = config.GetSection("sleep_time_ms").Get<int>();
+            _dateNeighborhood = config.GetSection("date_neighborhood").Get<int>();
 
             var now = DateTime.Now;
             // если сейчас второе полугодие, то крайняя дата - 1 сентября прошлого года. Иначе: первое сентября текущего года.
@@ -146,7 +148,7 @@ namespace AnswersLoader
             int j = 0;
             foreach (var d in group.GetTestsDates())
             {
-                if (j < answers.Count && Math.Abs(d.Subtract(answers[j].Date.Value).TotalDays) < 2)
+                if (j < answers.Count && Math.Abs(d.Date.Subtract(answers[j].Date.Value.Date).TotalDays) < _dateNeighborhood)
                 {
                     result.Add(true);
                     j++;
