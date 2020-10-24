@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using Microsoft.Extensions.Configuration;
+using Newtonsoft.Json;
 using VkNet;
 using VkNet.Model;
 using VkNet.Model.RequestParams;
@@ -12,17 +13,62 @@ namespace AnswersLoader
 {
     public class GroupReport
     {
-        public string Name { get; set; }
-        public List<DateTime> TestsDates { get; set; }
+        public Group Group { get; set; }
+        
+        [JsonIgnore]
         public SortedDictionary<string, List<bool>> UsersWithMarks { get; set; }
-        public GroupReport(string name, List<string> sortedNames, in int maxAnswCount)
+
+        public GroupReport(Group group)
         {
-            Name = name;
             UsersWithMarks = new SortedDictionary<string, List<bool>>();
-            sortedNames.ForEach(n => UsersWithMarks.Add(n, new List<bool>()));
-            TestsDates = new List<DateTime>(maxAnswCount);
+            Group = group;
         }
     }
+
+    public class Group
+    {
+        [JsonProperty("name")]
+        public string Name { get; set; }
+        
+        [JsonProperty("tests")]
+        public string[] Tests { get; set; }
+
+        [JsonIgnore]
+        private List<DateTime> tsds;
+
+        public List<DateTime> GetTestsDates()
+        {
+            if (tsds != null) return tsds;
+            
+            tsds = new List<DateTime>();
+            foreach (var s in Tests)
+            {
+                tsds.Add(DateTime.Parse(s));
+            }
+            tsds.Sort();
+
+            return tsds;
+        }
+        
+        // [JsonIgnore]
+        // public List<DateTime> TestsDates 
+        // { 
+        //     get
+        //     {
+        //         if (tsds == null)
+        //         {
+        //             foreach (var s in Tests)
+        //             {
+        //                 tsds.Add(DateTime.Parse(s));
+        //             }
+        //             tsds.Sort();
+        //         }
+        //
+        //         return tsds;
+        //     }
+        // }
+    }
+    
     public class GroupService
     {
         private VkApi _api;
@@ -39,9 +85,9 @@ namespace AnswersLoader
             _lowerDateLimit = now.Month < 9 ? new DateTime(now.Year - 1, 9, 1) : new DateTime(now.Year, 9, 1) ;
         }
         
-        public IEnumerable<Message> GetAllMessagesByGroup(string group)
+        public IEnumerable<Message> GetAllMessagesByGroup(Group group)
         {
-            const uint countMessages = 20;
+            const uint countMessages = 100;
             var result = new List<Message>();
             var offset = 0u;
 
@@ -49,7 +95,7 @@ namespace AnswersLoader
             {
                 var messages = _api.Messages.Search(new MessagesSearchParams
                 {
-                    Query = group,
+                    Query = group.Name,
                     Extended = true,
                     Count = countMessages,
                     Offset = offset
@@ -66,7 +112,7 @@ namespace AnswersLoader
             return result.Where(m => !String.IsNullOrEmpty(m.Text) && GetUserName(m) != "").Reverse();
         }
 
-        public GroupReport GetGroupReport(string groupName, IEnumerable<Message> allGroupMessages)
+        public GroupReport GetGroupReport(Group group, IEnumerable<Message> allGroupMessages)
         {
             var result = new SortedDictionary<string, List<Message>>();
             var usersAnswers = allGroupMessages.GroupBy(m => m.PeerId);
@@ -84,74 +130,36 @@ namespace AnswersLoader
             
             if (result.Count == 0) { return null; }
 
-            var sortedNames = result.Keys.ToList();
-            var answerLists = result.Values.ToList();
-
-            var maxAnswCount = answerLists.Max(l => l.Count);
-
-            var report = new GroupReport(groupName, sortedNames, maxAnswCount);
-
-            for (int i = 0; i < maxAnswCount; i++)
+            var report = new GroupReport(group);
+            foreach (var (name, answers) in result)
             {
-                var mode = GetModeDate(answerLists);
-                var marks = GetMarksAndRemoveAnsw(mode, answerLists);
-
-                report.TestsDates.Add(mode);
-                
-                var j = 0;
-                foreach (var name in sortedNames)
-                {
-                    report.UsersWithMarks[name].Add(marks[j]);
-                    j++;
-                }
+                var marks = GetUserMarks(group, answers);
+                report.UsersWithMarks[name] = marks;
             }
 
             return report;
         }
 
-        private DateTime GetModeDate(List<List<Message>> answerLists)
+        private List<bool> GetUserMarks(Group group, List<Message> answers)
         {
-            var counter = new Dictionary<DateTime, int>();
-            foreach (var l in answerLists)
+            var result = new List<bool>(group.GetTestsDates().Count);
+            int j = 0;
+            foreach (var d in group.GetTestsDates())
             {
-                if (l.Count == 0) { continue; }
-                
-                var date = l[0].Date.Value.Date;
-                if (counter.ContainsKey(date))
+                if (j < answers.Count && Math.Abs(d.Subtract(answers[j].Date.Value).TotalDays) < 2)
                 {
-                    counter[date]++;
+                    result.Add(true);
+                    j++;
                 }
                 else
                 {
-                    counter[date] = 1;
+                    result.Add(false);
                 }
             }
 
-            var modeDate = counter
-                .Aggregate((l, r) => l.Value > r.Value ? l : r).Key;
-
-            return modeDate;
+            return result;
         }
-
-        private List<bool> GetMarksAndRemoveAnsw(DateTime mode, List<List<Message>> answerLists)
-        {
-            var marks = new List<bool>(answerLists.Count);
-            foreach (var l in answerLists)
-            {
-                if (l.Count != 0 && (Math.Abs(l[0].Date.Value.Subtract(mode).TotalDays) < 2))
-                {
-                    marks.Add(true);
-                    l.RemoveAt(0);
-                }
-                else
-                {
-                    marks.Add(false);
-                }
-            }
-
-            return marks;
-        }
-
+        
         private string GetUserName(Message msg)
         {
             var firstLine = msg.Text.Split('\n')[0];

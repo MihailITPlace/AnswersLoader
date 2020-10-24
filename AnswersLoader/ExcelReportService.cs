@@ -31,10 +31,10 @@ namespace AnswersLoader
 
         private void WriteGroupReport(GroupReport report, ExcelPackage package)
         {
-            var ws = package.Workbook.Worksheets.Add(report.Name);
-            for (int i = 0; i < report.TestsDates.Count; i++)
+            var ws = package.Workbook.Worksheets.Add(report.Group.Name);
+            for (int i = 0; i < report.Group.GetTestsDates().Count; i++)
             {
-                ws.Cells[1, i + 2].Value = report.TestsDates[i].ToShortDateString();
+                ws.Cells[1, i + 2].Value = report.Group.GetTestsDates()[i].ToShortDateString();
             }
 
             int row = 2;

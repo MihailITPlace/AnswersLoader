@@ -17,13 +17,13 @@ namespace AnswersLoader
                 .AddJsonFile("appsettings.json", true, true)
                 .Build();
 
-            var groups = config.GetSection("groups").Get<string[]>();
+            var groups = config.GetSection("groups").Get<Group[]>();
             var service = new GroupService(ApiBuilder.GetApi(config), config);
             
             var reports = new List<GroupReport>(groups.Length);
             foreach (var g in groups)
             {
-                Console.WriteLine($"Загружаем группу {g}...");
+                Console.WriteLine($"Загружаем группу {g.Name}...");
                 var messages = service.GetAllMessagesByGroup(g);
 
                 Console.WriteLine("Обрабатываем сообщения...");
